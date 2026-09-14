@@ -1,9 +1,10 @@
-__pycache__
+__pycache__/
 *.pyc
 *.pyo
 *.db
 .env
-.git
+.git/
 .gitignore
 *.md
 test_api.py
+smartlock.db
