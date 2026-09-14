@@ -160,6 +160,7 @@ def init_db():
         try:
             c.execute("SELECT phone FROM users LIMIT 0")
         except Exception:
+            c.rollback()
             c.execute("ALTER TABLE users ADD COLUMN phone TEXT")
             c.execute("ALTER TABLE users ADD COLUMN is_temporary INTEGER DEFAULT 0")
             c.commit()
