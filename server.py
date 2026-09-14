@@ -157,13 +157,15 @@ def init_db():
 
     # ---- Migration: add phone/is_temporary to users table ----
     if USE_PG:
+        cur_m = c.cursor()
         try:
-            c.execute("SELECT phone FROM users LIMIT 0")
+            cur_m.execute("SELECT phone FROM users LIMIT 0")
         except Exception:
             c.rollback()
-            c.execute("ALTER TABLE users ADD COLUMN phone TEXT")
-            c.execute("ALTER TABLE users ADD COLUMN is_temporary INTEGER DEFAULT 0")
+            cur_m.execute("ALTER TABLE users ADD COLUMN phone TEXT")
+            cur_m.execute("ALTER TABLE users ADD COLUMN is_temporary INTEGER DEFAULT 0")
             c.commit()
+        cur_m.close()
     else:
         cols = {r[1] for r in c.execute("PRAGMA table_info(users)").fetchall()}
         if "phone" not in cols:
@@ -174,7 +176,8 @@ def init_db():
 
     # ---- New table: temp_pins (one-time PINs) ----
     if USE_PG:
-        c.execute("""CREATE TABLE IF NOT EXISTS temp_pins(
+        cur_t = c.cursor()
+        cur_t.execute("""CREATE TABLE IF NOT EXISTS temp_pins(
             id SERIAL PRIMARY KEY,
             user_id TEXT,
             pin_hash TEXT,
@@ -183,6 +186,7 @@ def init_db():
             used INTEGER DEFAULT 0,
             active INTEGER DEFAULT 1
         )""")
+        cur_t.close()
     else:
         c.execute("""CREATE TABLE IF NOT EXISTS temp_pins(
             id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -196,7 +200,8 @@ def init_db():
 
     # ---- New table: otp_codes ----
     if USE_PG:
-        c.execute("""CREATE TABLE IF NOT EXISTS otp_codes(
+        cur_o = c.cursor()
+        cur_o.execute("""CREATE TABLE IF NOT EXISTS otp_codes(
             id SERIAL PRIMARY KEY,
             phone TEXT,
             otp TEXT,
@@ -204,6 +209,7 @@ def init_db():
             created_at REAL,
             verified INTEGER DEFAULT 0
         )""")
+        cur_o.close()
     else:
         c.execute("""CREATE TABLE IF NOT EXISTS otp_codes(
             id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -227,7 +233,7 @@ def init_db():
     if db_table_check(c, "users") == 0:
         from sim_data import gen_users
         for u in gen_users()[:5]:
-            db_exec(c, f"INSERT INTO users VALUES({ph},{ph},{ph},{ph},{ph},{ph})",
+            db_exec(c, f"INSERT INTO users(id,name,pin,usual_start_hour,usual_end_hour,mean_interarrival_min) VALUES({ph},{ph},{ph},{ph},{ph},{ph})",
                     (u["id"], u["name"], u["pin"], u["usual_start_hour"],
                      u["usual_end_hour"], u["mean_interarrival_min"]))
 
