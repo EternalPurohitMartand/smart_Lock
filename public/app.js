@@ -27,6 +27,7 @@ python server.py</pre>
       $('loginWall').style.display='block';$('mainApp').style.display='none';return false;
     }
     currentUser=me;
+    $('loginWall').style.display='none';$('mainApp').style.display='block';
     $('loggedOut').style.display='none';$('loggedIn').style.display='flex';
     $('userName').textContent=me.name;$('userPic').src=me.picture||'';
     $('userRole').textContent=me.role;$('userRole').className='pill role-pill '+me.role;
