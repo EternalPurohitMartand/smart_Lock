@@ -1,0 +1,9 @@
+__pycache__
+*.pyc
+*.pyo
+*.db
+.env
+.git
+.gitignore
+*.md
+test_api.py

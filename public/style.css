@@ -1,0 +1,38 @@
+*{box-sizing:border-box}body{font-family:Segoe UI,Arial,sans-serif;margin:0;background:#0f172a;color:#e2e8f0}
+header{display:flex;justify-content:space-between;align-items:center;padding:16px 20px;background:#020617;border-bottom:1px solid #1e293b}
+h1{margin:0;font-size:20px}.sub{margin:4px 0 0;color:#94a3b8;font-size:13px}
+.header-right{display:flex;align-items:center;gap:12px}
+.pill{background:#1e293b;padding:8px 12px;border-radius:20px;font-size:13px}
+.role-pill{font-size:11px;text-transform:uppercase;letter-spacing:0.5px}
+.role-pill.super_admin{background:#7c3aed;color:#fff}
+.role-pill.admin{background:#2563eb;color:#fff}
+.role-pill.user{background:#475569;color:#e2e8f0}
+.avatar{width:28px;height:28px;border-radius:50%;vertical-align:middle}
+.login-btn{background:#2563eb;color:#fff;text-decoration:none;padding:8px 16px;border-radius:8px;font-size:13px}
+.login-btn:hover{background:#1d4ed8}
+.logout-btn{color:#94a3b8;text-decoration:none;font-size:13px;margin-left:8px}
+.logout-btn:hover{color:#ef4444}
+#loginWall{padding:40px;text-align:center}
+nav{display:flex;gap:8px;padding:10px 20px;background:#020617;flex-wrap:wrap}
+nav button{background:#1e293b;color:#e2e8f0;border:0;padding:8px 12px;border-radius:8px;cursor:pointer}
+nav button.active{background:#2563eb}
+main{padding:20px;max-width:1000px;margin:auto}
+.tab{display:none}.tab.active{display:block}
+.cards{display:grid;grid-template-columns:repeat(auto-fit,minmax(260px,1fr));gap:12px}
+.card{background:#1e293b;border:1px solid #334155;border-radius:12px;padding:16px;margin-bottom:12px}
+.big{font-size:28px;font-weight:700;margin:8px 0}
+.mono{background:#020617;padding:10px;border-radius:8px;white-space:pre-wrap;font-size:13px}
+.muted{color:#94a3b8;font-size:13px}
+.row{display:flex;gap:8px;margin:8px 0;flex-wrap:wrap}
+button{background:#2563eb;color:#fff;border:0;padding:9px 14px;border-radius:8px;cursor:pointer}
+button:hover{background:#1d4ed8}
+input,select{background:#020617;color:#e2e8f0;border:1px solid #334155;border-radius:8px;padding:8px;margin:4px 0;min-width:220px}
+label{display:block;margin:6px 0}
+table{width:100%;border-collapse:collapse;font-size:13px}
+th,td{border-bottom:1px solid #334155;padding:6px;text-align:left}
+code{background:#020617;padding:2px 6px;border-radius:6px}
+footer{padding:16px;text-align:center}
+.GRANT{color:#22c55e}.STEP_UP{color:#f59e0b}.DENY_ALERT{color:#ef4444}
+.admin-only{display:none}
+body.role-admin .admin-only,body.role-super_admin .admin-only{display:block}
+#map{background:#020617}
