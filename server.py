@@ -155,6 +155,64 @@ def init_db():
             if col not in cols:
                 c.execute(f"ALTER TABLE events ADD COLUMN {col} {typ}")
 
+    # ---- Migration: add phone/is_temporary to users table ----
+    if USE_PG:
+        try:
+            c.execute("SELECT phone FROM users LIMIT 0")
+        except Exception:
+            c.execute("ALTER TABLE users ADD COLUMN phone TEXT")
+            c.execute("ALTER TABLE users ADD COLUMN is_temporary INTEGER DEFAULT 0")
+            c.commit()
+    else:
+        cols = {r[1] for r in c.execute("PRAGMA table_info(users)").fetchall()}
+        if "phone" not in cols:
+            c.execute("ALTER TABLE users ADD COLUMN phone TEXT")
+        if "is_temporary" not in cols:
+            c.execute("ALTER TABLE users ADD COLUMN is_temporary INTEGER DEFAULT 0")
+            c.commit()
+
+    # ---- New table: temp_pins (one-time PINs) ----
+    if USE_PG:
+        c.execute("""CREATE TABLE IF NOT EXISTS temp_pins(
+            id SERIAL PRIMARY KEY,
+            user_id TEXT,
+            pin_hash TEXT,
+            phone TEXT,
+            created_at REAL,
+            used INTEGER DEFAULT 0,
+            active INTEGER DEFAULT 1
+        )""")
+    else:
+        c.execute("""CREATE TABLE IF NOT EXISTS temp_pins(
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            user_id TEXT,
+            pin_hash TEXT,
+            phone TEXT,
+            created_at REAL,
+            used INTEGER DEFAULT 0,
+            active INTEGER DEFAULT 1
+        )""")
+
+    # ---- New table: otp_codes ----
+    if USE_PG:
+        c.execute("""CREATE TABLE IF NOT EXISTS otp_codes(
+            id SERIAL PRIMARY KEY,
+            phone TEXT,
+            otp TEXT,
+            purpose TEXT,
+            created_at REAL,
+            verified INTEGER DEFAULT 0
+        )""")
+    else:
+        c.execute("""CREATE TABLE IF NOT EXISTS otp_codes(
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            phone TEXT,
+            otp TEXT,
+            purpose TEXT,
+            created_at REAL,
+            verified INTEGER DEFAULT 0
+        )""")
+
     ph = "%s" if USE_PG else "?"
     upsert_cfg = f"INSERT INTO config VALUES(1,0.35,0.40,0.25,0.50,0.65,{ph},{ph})" if not db_table_check(c, "config") else f"UPDATE config SET mode={ph}, device_id={ph} WHERE id=1"
     if not db_table_check(c, "config"):
@@ -280,6 +338,68 @@ def evaluate(user_id, hour, iv, sn, cfg):
     R = re.compute_risk(C, B, H, cfg["wC"], cfg["wB"], cfg["wH"])
     dec = re.decide(R, cfg["tau1"], cfg["tau2"])
     return C, B, H, R, dec, F
+
+# ---------- WhatsApp simulation ----------
+def send_whatsapp(phone, message):
+    print(f"[WHATSAPP → {phone}] {message}")
+    return True
+
+def generate_otp(phone):
+    otp = f"{secrets.randbelow(900000)+100000}"
+    c = db(); p = ph()
+    db_exec(c, f"INSERT INTO otp_codes(phone,otp,purpose,created_at) VALUES({p},{p},{p},{p})",
+            (phone, otp, "request_pin", time.time()))
+    c.commit(); c.close()
+    send_whatsapp(phone, f"Your verification code: {otp}")
+    return otp
+
+def generate_temp_pin(user_id, phone):
+    raw = f"{secrets.randbelow(900000)+100000}"
+    pin_hash = hashlib.sha256(raw.encode()).hexdigest()
+    c = db(); p = ph()
+    if USE_PG:
+        pid = db_insert_returning(c,
+            f"INSERT INTO temp_pins(user_id,pin_hash,phone,created_at,used,active) VALUES({p},{p},{p},{p},0,1) RETURNING id",
+            (user_id, pin_hash, phone, time.time()))
+    else:
+        pid = db_insert_returning(c,
+            f"INSERT INTO temp_pins(user_id,pin_hash,phone,created_at,used,active) VALUES({p},{p},{p},{p},0,1)",
+            (user_id, pin_hash, phone, time.time()))
+    c.commit(); c.close()
+    send_whatsapp(phone, f"Your one-time PIN: {raw}\nSingle-use. One lock/unlock only.")
+    return raw, pid
+
+def verify_temp_pin(pin_entered, client_ip, loc):
+    pin_hash = hashlib.sha256(pin_entered.encode()).hexdigest()
+    c = db(); p = ph()
+    rows = db_fetchall(c, f"SELECT * FROM temp_pins WHERE pin_hash={p} AND active=1 ORDER BY id DESC LIMIT 1", (pin_hash,))
+    if not rows:
+        c.close()
+        eid = log_event("unknown", False, time.localtime().tm_hour, 180, 0, 0, 0, 0, 1.0, 1.0, "DENY_ALERT",
+                        "invalid/temp PIN", client_ip, loc.get("lat"), loc.get("lon"), loc.get("city",""), loc.get("region",""), loc.get("country",""))
+        return {"decision": "DENY_ALERT", "reason": "invalid or expired PIN"}
+    row = rows[0]
+    user_id = row["user_id"]
+    hour = float(time.localtime().tm_hour + time.localtime().tm_min / 60)
+    iv = last_interarrival(user_id)
+    cfg = get_config()
+    C, B, Hh, R, dec, F = evaluate(user_id, hour, iv, 1, cfg)
+    eid = log_event(user_id, dec == "GRANT", hour, iv, F, 1, C, B, Hh, R, dec, "temp PIN access",
+                    client_ip, loc.get("lat"), loc.get("lon"), loc.get("city",""), loc.get("region",""), loc.get("country",""))
+    if dec == "GRANT":
+        db_exec(c, f"UPDATE temp_pins SET used=1,active=0 WHERE id={row['id']}")
+        db_exec(c, f"UPDATE lock_state SET state='UNLOCKED',updated_at={p} WHERE id=1", (time.time(),))
+        mqtt_publish(f"smartlock/{cfg['device_id']}/command", {"cmd": "UNLOCK", "eventId": eid, "via": "temp_pin"})
+        c.commit()
+    else:
+        c.commit()
+    c.close()
+    result = {"decision": dec, "R": R, "C": C, "B": B, "H": Hh, "eventId": eid, "via": "temp_pin"}
+    if dec == "STEP_UP":
+        otp_code = f"{secrets.randbelow(900000)+100000}"
+        OTP_STORE[eid] = otp_code
+        result["demo_otp"] = otp_code
+    return result
 
 # ---------- Google OAuth ----------
 def _google_fetch(url, data=None):
@@ -442,6 +562,22 @@ class H(BaseHTTPRequestHandler):
             if p.path == "/api/config":
                 return self.send_json(get_config())
 
+            if p.path == "/api/admin/users":
+                if not sess or sess["role"] not in ("admin", "super_admin"):
+                    return self.send_json({"error": "forbidden"}, 403)
+                c = db()
+                rows = db_fetchall(c, "SELECT id,name,phone,is_temporary FROM users ORDER BY id")
+                c.close()
+                return self.send_json({"users": rows})
+
+            if p.path == "/api/admin/temp-pins":
+                if not sess or sess["role"] not in ("admin", "super_admin"):
+                    return self.send_json({"error": "forbidden"}, 403)
+                c = db()
+                rows = db_fetchall(c, "SELECT tp.id,tp.user_id,tp.phone,tp.created_at,tp.used,tp.active,u.name FROM temp_pins tp LEFT JOIN users u ON tp.user_id=u.id ORDER BY tp.id DESC LIMIT 50")
+                c.close()
+                return self.send_json({"pins": rows})
+
             if p.path == "/api/users":
                 if not sess:
                     return self.send_json({"error": "unauthorized"}, 401)
@@ -517,7 +653,99 @@ class H(BaseHTTPRequestHandler):
                 sess["device_id"] = device_id
                 return self.send_json({"ok": True, "device_id": device_id})
 
-            return self.send_json({"error": "not found"}, 404)
+        if p.path == "/api/admin/register-user":
+            if not sess or sess["role"] not in ("admin", "super_admin"):
+                return self.send_json({"error": "forbidden"}, 403)
+            uid = d.get("userId", "").strip()
+            name = d.get("name", "").strip()
+            phone = d.get("phone", "").strip()
+            is_temp = 1 if d.get("is_temporary") else 0
+            if not uid or not name or not phone:
+                return self.send_json({"error": "userId, name, phone required"}, 400)
+            c = db(); p = ph()
+            existing = db_fetchone(c, f"SELECT id FROM users WHERE id={p}", (uid,))
+            if existing:
+                c.close()
+                return self.send_json({"error": "User ID already exists"}, 400)
+            if USE_PG:
+                db_exec(c, f"INSERT INTO users(id,name,phone,is_temporary,pin,usual_start_hour,usual_end_hour,mean_interarrival_min) VALUES({p},{p},{p},{p},'',7.0,21.0,180.0)",
+                        (uid, name, phone, is_temp))
+            else:
+                db_exec(c, f"INSERT INTO users(id,name,phone,is_temporary,pin,usual_start_hour,usual_end_hour,mean_interarrival_min) VALUES({p},{p},{p},{p},'',7.0,21.0,180.0)",
+                        (uid, name, phone, is_temp))
+            c.commit(); c.close()
+            return self.send_json({"ok": True, "userId": uid})
+
+        if p.path == "/api/admin/delete-user":
+            if not sess or sess["role"] not in ("admin", "super_admin"):
+                return self.send_json({"error": "forbidden"}, 403)
+            uid = d.get("userId", "").strip()
+            if not uid:
+                return self.send_json({"error": "userId required"}, 400)
+            c = db(); p = ph()
+            db_exec(c, f"DELETE FROM users WHERE id={p}", (uid,))
+            db_exec(c, f"DELETE FROM temp_pins WHERE user_id={p}", (uid,))
+            c.commit(); c.close()
+            return self.send_json({"ok": True})
+
+        if p.path == "/api/user/request-otp":
+            if not sess:
+                return self.send_json({"error": "unauthorized"}, 401)
+            phone_input = str(d.get("phone", "")).strip()
+            c = db(); p = ph()
+            user = db_fetchone(c, f"SELECT * FROM users WHERE id={p}", (sess["email"],))
+            c.close()
+            if not user:
+                return self.send_json({"error": "You are not registered. Ask admin."}, 404)
+            if not user.get("phone"):
+                return self.send_json({"error": "No phone registered. Ask admin."}, 400)
+            if phone_input != user["phone"]:
+                return self.send_json({"error": "Phone does not match registered number."}, 400)
+            otp = generate_otp(user["phone"])
+            masked = user["phone"][:3] + "****" + user["phone"][-2:] if len(user["phone"]) > 5 else user["phone"]
+            return self.send_json({"ok": True, "phone_masked": masked, "demo_otp": otp,
+                                   "message": f"OTP sent to {masked} (simulated)"})
+
+        if p.path == "/api/user/verify-otp":
+            if not sess:
+                return self.send_json({"error": "unauthorized"}, 401)
+            phone_input = str(d.get("phone", "")).strip()
+            otp_input = str(d.get("otp", "")).strip()
+            c = db(); p = ph()
+            user = db_fetchone(c, f"SELECT * FROM users WHERE id={p}", (sess["email"],))
+            c.close()
+            if not user or not user.get("phone"):
+                return self.send_json({"error": "Not registered or no phone."}, 400)
+            if phone_input != user["phone"]:
+                return self.send_json({"error": "Phone mismatch."}, 400)
+            c = db()
+            row = db_fetchall(c, f"SELECT * FROM otp_codes WHERE phone={p} AND otp={p} AND purpose='request_pin' AND verified=0 ORDER BY id DESC LIMIT 1",
+                              (phone_input, otp_input))
+            if not row:
+                c.close()
+                return self.send_json({"error": "Invalid or expired OTP."}, 400)
+            db_exec(c, f"UPDATE otp_codes SET verified=1 WHERE id={row[0]['id']}")
+            c.commit(); c.close()
+            raw_pin, pid = generate_temp_pin(sess["email"], user["phone"])
+            return self.send_json({"ok": True, "pin": raw_pin, "message": "One-time PIN generated. Single-use — one lock/unlock only."})
+
+        if p.path == "/api/access/pin":
+            pin_entered = str(d.get("pin", "")).strip()
+            if not pin_entered or len(pin_entered) != 6:
+                return self.send_json({"error": "6-digit PIN required"}, 400)
+            result = verify_temp_pin(pin_entered, client_ip, loc)
+            return self.send_json(result)
+
+        if p.path == "/api/admin/revoke-pin":
+            if not sess or sess["role"] not in ("admin", "super_admin"):
+                return self.send_json({"error": "forbidden"}, 403)
+            pin_id = int(d.get("pinId", 0))
+            c = db(); p = ph()
+            db_exec(c, f"UPDATE temp_pins SET active=0 WHERE id={p}", (pin_id,))
+            c.commit(); c.close()
+            return self.send_json({"ok": True})
+
+        return self.send_json({"error": "not found"}, 404)
 
         path = p.path if p.path != "/" else "/index.html"
         fp = os.path.join(PUBLIC, path.lstrip("/").replace("..", ""))

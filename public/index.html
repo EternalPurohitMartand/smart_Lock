@@ -42,6 +42,8 @@
   <button data-tab="sim">Simulation Lab</button>
   <button data-tab="settings">Settings</button>
   <button data-tab="esp32">ESP32 Setup</button>
+  <button data-tab="users" id="navUsers" style="display:none">Users & PINs</button>
+  <button data-tab="temppin">Temp Access</button>
   <button data-tab="owner" id="navOwner" style="display:none">Owner Dashboard</button>
 </nav>
 <main>
@@ -114,6 +116,51 @@
     <li>Website keeps working in <b>simulation</b> mode until hardware publishes status.</li>
   </ol>
   <p class="muted">API contract: POST /api/access/request, POST /api/access/stepup, POST /api/lock/command, GET /api/lock/status. Same for future Node port.</p></div>
+</section>
+<section id="tab-users" class="tab">
+  <div class="card"><h3>Register User (admin only)</h3>
+    <label>User ID <input id="regUserId" placeholder="e.g. plumber_joe"/></label>
+    <label>Full Name <input id="regUserName" placeholder="e.g. Joe Smith"/></label>
+    <label>Phone Number <input id="regUserPhone" placeholder="e.g. +919876543210"/></label>
+    <label><input id="regUserTemp" type="checkbox"/> Temporary access user (serviceman, guest)</label>
+    <div class="row"><button id="btnRegisterUser">Register User</button></div>
+    <span id="regUserMsg" class="muted"></span>
+  </div>
+  <div class="card"><h3>Registered Users</h3>
+    <div class="row"><button id="btnRefreshUsers">Refresh</button></div>
+    <table id="userTable"><thead><tr><th>User ID</th><th>Name</th><th>Phone</th><th>Type</th><th>Action</th></tr></thead><tbody></tbody></table>
+  </div>
+  <div class="card"><h3>Active One-Time PINs</h3>
+    <div class="row"><button id="btnRefreshPins">Refresh</button></div>
+    <table id="pinTable"><thead><tr><th>ID</th><th>User</th><th>Phone</th><th>Created</th><th>Status</th><th>Action</th></tr></thead><tbody></tbody></table>
+  </div>
+</section>
+<section id="tab-temppin" class="tab">
+  <div class="card"><h3>Request Temporary Access PIN</h3>
+    <p class="muted">Enter your registered phone number. An OTP will be sent for verification, then a one-time PIN will be generated.</p>
+    <label>Your registered phone number <input id="tempPhone" placeholder="+919876543210"/></label>
+    <div class="row"><button id="btnRequestOtp">Send OTP</button></div>
+    <div id="otpSection" style="display:none">
+      <label>Enter OTP <input id="tempOtp" placeholder="6-digit code"/></label>
+      <div class="row"><button id="btnVerifyOtp">Verify OTP</button></div>
+    </div>
+    <div id="pinResult" style="display:none">
+      <div class="card" style="background:#065f46;border-color:#10b981;margin-top:12px">
+        <h3 style="color:#10b981">Your One-Time PIN</h3>
+        <div id="tempPinCode" style="font-size:36px;font-weight:700;letter-spacing:8px;text-align:center;padding:16px;color:#fff">—</div>
+        <p class="muted" style="text-align:center">This PIN works for ONE lock/unlock cycle only. After use it becomes invalid.</p>
+      </div>
+    </div>
+  </div>
+  <div class="card"><h3>Enter Temporary PIN for Lock Access</h3>
+    <p class="muted">Enter the 6-digit one-time PIN shared with you. Single use — one lock/unlock only.</p>
+    <label>One-time PIN <input id="tempPinEntry" placeholder="6-digit PIN" maxlength="6"/></label>
+    <div class="row"><button id="btnPinAccess">Unlock with PIN</button></div>
+    <pre id="pinAccessOut" class="mono">—</pre>
+    <div id="pinStepupBox" style="display:none" class="row">
+      <input id="pinOtp" placeholder="Enter step-up OTP"/><button id="btnPinStepup">Verify</button>
+    </div>
+  </div>
 </section>
 <section id="tab-owner" class="tab">
   <div class="card"><h3>Owner Dashboard — All Users & Lock IDs</h3>
