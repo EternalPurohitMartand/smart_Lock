@@ -574,9 +574,14 @@ class H(BaseHTTPRequestHandler):
             sess = get_session(self)
             if not sess:
                 return self.send_json({"logged_in": False})
+            c = db(); p = ph()
+            urow = db_fetchone(c, f"SELECT tier FROM users WHERE id={p}", (sess["email"],))
+            c.close()
+            user_tier = urow["tier"] if urow else 2
             return self.send_json({
                 "logged_in": True, "email": sess["email"], "name": sess["name"],
                 "picture": sess["picture"], "role": sess["role"], "device_id": sess["device_id"],
+                "tier": user_tier,
             })
 
         if p.path.startswith("/api/"):

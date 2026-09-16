@@ -28,6 +28,7 @@ async function checkAuth(){
     document.body.className='role-'+me.role;
     if(me.role==='super_admin')$('navOwner').style.display='block';
     if(me.role==='admin'||me.role==='super_admin')$('navUsers').style.display='block';
+    configureAccessTab();
     return true;
   }catch{return false}
 }
@@ -84,7 +85,7 @@ async function loadAdminUsers(){
     const d=await j('/api/admin/users');
     $('userTable').querySelector('tbody').innerHTML=d.users.map(u=>`<tr>
       <td><code>${u.id}</code></td><td>${u.name||'\u2014'}</td><td>${u.phone?u.phone.replace(/(\+\d{2})\d+(\d{2})/,'$1****$2'):'\u2014'}</td>
-      <td>${u.tier===1?'<span class="GRANT">Tier 1 (Permanent)</span>':'<span class="STEP_UP">Tier 2 (Temporary)</span>'}</td>
+      <td>${u.tier===1?'<span class="GRANT">Permanent</span>':'<span class="STEP_UP">Guest</span>'}</td>
       <td>${u.tier===1&&u.pin?'PIN: '+u.pin.replace(/(\d{2})\d+(\d{2})/,'$1****$2'):'\u2014'}</td>
       <td><button class="btn-sm btn-danger" onclick="deleteUser('${u.id}')">Delete</button></td>
     </tr>`).join('');
@@ -122,6 +123,7 @@ document.querySelectorAll('nav button').forEach(b=>b.onclick=()=>{
   b.classList.add('active');$('tab-'+b.dataset.tab).classList.add('active');
   if(b.dataset.tab==='owner')loadOwnerDashboard();
   if(b.dataset.tab==='users'){loadAdminUsers();loadTempPins();populateGrantPinUsers();}
+  if(b.dataset.tab==='temppin')configureAccessTab();
 });
 
 $('btnLock').onclick=async()=>{await j('/api/lock/command',{method:'POST',body:JSON.stringify({command:'LOCK'})});status();events()};
@@ -176,19 +178,29 @@ async function populateGrantPinUsers(){
   }catch{}
 }
 
-$('btnRequestOtp').onclick=async()=>{
-  const r=await j('/api/user/request-otp',{method:'POST',body:JSON.stringify({phone:$('tempPhone').value})});
-  if(r.ok){$('otpSection').style.display='block';$('otpSection').innerHTML=`<p class="muted">OTP sent to ${r.phone_masked}</p><label>Enter OTP <input id="tempOtp" placeholder="6-digit code"/></label><div class="row"><button id="btnVerifyOtp">Verify OTP</button></div><p class="muted">Demo: OTP is <b>${r.demo_otp}</b></p>`;$('btnVerifyOtp').onclick=verifyOtp;}
-  else alert(r.error);
-};
-
-async function verifyOtp(){
-  const r=await j('/api/user/verify-otp',{method:'POST',body:JSON.stringify({phone:$('tempPhone').value,otp:$('tempOtp').value})});
-  if(r.ok){
-    $('pinResult').style.display='block';
-    $('tempPinCode').textContent=r.pin;
-    $('otpSection').style.display='none';
-  } else alert(r.error);
+function configureAccessTab(){
+  if(!currentUser)return;
+  if(currentUser.tier===1){
+    $('otpFlow').style.display='none';
+    $('pinFlow').style.display='block';
+    $('accessIntro').textContent='Enter your permanent PIN to unlock the door.';
+  }else{
+    $('otpFlow').style.display='block';
+    $('pinFlow').style.display='block';
+    $('accessIntro').textContent='Verify your identity with an OTP, then enter the PIN to unlock.';
+    $('btnRequestOtp').onclick=async()=>{
+      const r=await j('/api/user/request-otp',{method:'POST',body:JSON.stringify({phone:$('tempPhone').value})});
+      if(r.ok){
+        $('otpSection').style.display='block';
+        $('otpSection').innerHTML=`<p class="muted">OTP sent to ${r.phone_masked}</p><label>Enter OTP <input id="tempOtp" placeholder="6-digit code"/></label><div class="row"><button id="btnVerifyOtp">Verify</button></div><p class="muted">Demo: OTP is <b>${r.demo_otp}</b></p>`;
+        $('btnVerifyOtp').onclick=async()=>{
+          const r2=await j('/api/user/verify-otp',{method:'POST',body:JSON.stringify({phone:$('tempPhone').value,otp:$('tempOtp').value})});
+          if(r2.ok){$('pinResult').style.display='block';$('tempPinCode').textContent=r2.pin;$('otpSection').style.display='none';}
+          else alert(r2.error);
+        };
+      } else alert(r.error);
+    };
+  }
 }
 
 $('btnPinAccess').onclick=async()=>{
