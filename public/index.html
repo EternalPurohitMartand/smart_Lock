@@ -122,17 +122,28 @@
     <label>User ID <input id="regUserId" placeholder="e.g. plumber_joe"/></label>
     <label>Full Name <input id="regUserName" placeholder="e.g. Joe Smith"/></label>
     <label>Phone Number <input id="regUserPhone" placeholder="e.g. +919876543210"/></label>
-    <label><input id="regUserTemp" type="checkbox"/> Temporary access user (serviceman, guest)</label>
+    <label>Tier <select id="regUserTier"><option value="1">Tier 1 — Permanent (trusted, has PIN)</option><option value="2" selected>Tier 2 — Temporary (guest, gets OTP+PIN)</option></select></label>
+    <div id="regPinField" style="display:none">
+      <label>Permanent PIN (6-digit) <input id="regUserPin" maxlength="6" placeholder="e.g. 123456"/></label>
+      <p class="muted">PIN will be sent to user via WhatsApp. Admin is notified on every entry.</p>
+    </div>
     <div class="row"><button id="btnRegisterUser">Register User</button></div>
     <span id="regUserMsg" class="muted"></span>
   </div>
+  <div class="card admin-only"><h3>Grant Temporary PIN (Tier 2)</h3>
+    <label>User <select id="grantPinUser"></select></label>
+    <label>Duration (minutes) <input id="grantPinDuration" type="number" value="120" min="1"/></label>
+    <p class="muted">2 min = quick entry, 1440 = 1 day, 10080 = 7 days, etc.</p>
+    <div class="row"><button id="btnGrantPin">Generate & Send PIN</button></div>
+    <span id="grantPinMsg" class="muted"></span>
+  </div>
   <div class="card"><h3>Registered Users</h3>
     <div class="row"><button id="btnRefreshUsers">Refresh</button></div>
-    <table id="userTable"><thead><tr><th>User ID</th><th>Name</th><th>Phone</th><th>Type</th><th>Action</th></tr></thead><tbody></tbody></table>
+    <table id="userTable"><thead><tr><th>User ID</th><th>Name</th><th>Phone</th><th>Tier</th><th>PIN</th><th>Action</th></tr></thead><tbody></tbody></table>
   </div>
-  <div class="card"><h3>Active One-Time PINs</h3>
+  <div class="card"><h3>Active Temporary PINs</h3>
     <div class="row"><button id="btnRefreshPins">Refresh</button></div>
-    <table id="pinTable"><thead><tr><th>ID</th><th>User</th><th>Phone</th><th>Created</th><th>Status</th><th>Action</th></tr></thead><tbody></tbody></table>
+    <table id="pinTable"><thead><tr><th>ID</th><th>User</th><th>Phone</th><th>Created</th><th>Expires</th><th>Status</th><th>Action</th></tr></thead><tbody></tbody></table>
   </div>
 </section>
 <section id="tab-temppin" class="tab">

@@ -84,7 +84,8 @@ async function loadAdminUsers(){
     const d=await j('/api/admin/users');
     $('userTable').querySelector('tbody').innerHTML=d.users.map(u=>`<tr>
       <td><code>${u.id}</code></td><td>${u.name||'\u2014'}</td><td>${u.phone?u.phone.replace(/(\+\d{2})\d+(\d{2})/,'$1****$2'):'\u2014'}</td>
-      <td>${u.is_temporary?'<span class="STEP_UP">Temporary</span>':'<span class="GRANT">Trusted</span>'}</td>
+      <td>${u.tier===1?'<span class="GRANT">Tier 1 (Permanent)</span>':'<span class="STEP_UP">Tier 2 (Temporary)</span>'}</td>
+      <td>${u.tier===1&&u.pin?'PIN: '+u.pin.replace(/(\d{2})\d+(\d{2})/,'$1****$2'):'\u2014'}</td>
       <td><button class="btn-sm btn-danger" onclick="deleteUser('${u.id}')">Delete</button></td>
     </tr>`).join('');
   }catch{}
@@ -95,8 +96,9 @@ async function loadTempPins(){
   try{
     const d=await j('/api/admin/temp-pins');
     $('pinTable').querySelector('tbody').innerHTML=d.pins.map(p=>`<tr>
-      <td>${p.id}</td><td>${p.user_id}</td><td>${p.phone?p.phone.replace(/(\+\d{2})\d+(\d{2})/,'$1****$2'):'\u2014'}</td>
+      <td>${p.id}</td><td>${p.user_id} (${p.name||'\u2014'})</td><td>${p.phone?p.phone.replace(/(\+\d{2})\d+(\d{2})/,'$1****$2'):'\u2014'}</td>
       <td>${new Date(p.created_at*1000).toLocaleString()}</td>
+      <td>${p.expires_at?new Date(p.expires_at*1000).toLocaleString():'\u2014'}</td>
       <td>${p.used?'<span class="DENY_ALERT">Used</span>':p.active?'<span class="GRANT">Active</span>':'<span class="muted">Revoked</span>'}</td>
       <td>${p.active&&!p.used?`<button class="btn-sm btn-danger" onclick="revokePin(${p.id})">Revoke</button>`:''}</td>
     </tr>`).join('');
@@ -119,7 +121,7 @@ document.querySelectorAll('nav button').forEach(b=>b.onclick=()=>{
   document.querySelectorAll('.tab').forEach(x=>x.classList.remove('active'));
   b.classList.add('active');$('tab-'+b.dataset.tab).classList.add('active');
   if(b.dataset.tab==='owner')loadOwnerDashboard();
-  if(b.dataset.tab==='users'){loadAdminUsers();loadTempPins();}
+  if(b.dataset.tab==='users'){loadAdminUsers();loadTempPins();populateGrantPinUsers();}
 });
 
 $('btnLock').onclick=async()=>{await j('/api/lock/command',{method:'POST',body:JSON.stringify({command:'LOCK'})});status();events()};
@@ -144,15 +146,35 @@ $('btnSim').onclick=async()=>{$('simOut').textContent='running\u2026';const r=aw
 $('btnRegister').onclick=async()=>{const r=await j('/api/lock/register',{method:'POST',body:JSON.stringify({device_id:$('regDeviceId').value,lock_name:$('regLockName').value})});$('regMsg').textContent=r.ok?'Lock registered \u2713':(r.error||'Failed')};
 
 $('btnRegisterUser').onclick=async()=>{
+  const tier=$('regUserTier').value;
   const r=await j('/api/admin/register-user',{method:'POST',body:JSON.stringify({
     userId:$('regUserId').value, name:$('regUserName').value,
-    phone:$('regUserPhone').value, is_temporary:$('regUserTemp').checked
+    phone:$('regUserPhone').value, tier:+tier,
+    pin:tier==='1'?$('regUserPin').value:''
   })});
   $('regUserMsg').textContent=r.ok?'User registered \u2713':(r.error||'Failed');
-  if(r.ok){$('regUserId').value='';$('regUserName').value='';$('regUserPhone').value='';$('regUserTemp').checked=false;loadAdminUsers();}
+  if(r.ok){$('regUserId').value='';$('regUserName').value='';$('regUserPhone').value='';$('regUserPin').value='';loadAdminUsers();}
 };
 $('btnRefreshUsers').onclick=loadAdminUsers;
 $('btnRefreshPins').onclick=loadTempPins;
+
+$('btnGrantPin').onclick=async()=>{
+  const r=await j('/api/admin/grant-pin',{method:'POST',body:JSON.stringify({
+    userId:$('grantPinUser').value, durationMin:+$('grantPinDuration').value
+  })});
+  $('grantPinMsg').textContent=r.ok?`PIN: ${r.pin} (sent to ${r.phone_masked})`:r.error;
+};
+$('regUserTier').onchange=()=>{
+  $('regPinField').style.display=$('regUserTier').value==='1'?'block':'none';
+};
+
+async function populateGrantPinUsers(){
+  try{
+    const d=await j('/api/admin/users');
+    const tier2=d.users.filter(u=>u.tier===2);
+    $('grantPinUser').innerHTML=tier2.map(u=>`<option value="${u.id}">${u.name} (${u.id})</option>`).join('');
+  }catch{}
+}
 
 $('btnRequestOtp').onclick=async()=>{
   const r=await j('/api/user/request-otp',{method:'POST',body:JSON.stringify({phone:$('tempPhone').value})});

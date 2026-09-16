@@ -103,151 +103,128 @@ else:
     def db_table_check(conn, table, where="1=1"):
         return conn.execute(f"SELECT COUNT(*) FROM {table} WHERE {where}").fetchone()[0]
 
+def _pg_exec(c, sql, params=()):
+    try:
+        cur = c.cursor()
+        cur.execute(sql, params)
+        cur.close()
+    except Exception:
+        try: c.rollback()
+        except: pass
+
 def init_db():
     c = db()
-    if USE_PG:
-        cur = c.cursor()
-        cur.execute("""
-        CREATE TABLE IF NOT EXISTS users(id TEXT PRIMARY KEY, name TEXT, pin TEXT,
-          usual_start_hour REAL, usual_end_hour REAL, mean_interarrival_min REAL);
-        CREATE TABLE IF NOT EXISTS events(id SERIAL PRIMARY KEY, ts REAL,
+    DDL = [
+        """CREATE TABLE IF NOT EXISTS users(id TEXT PRIMARY KEY, name TEXT, pin TEXT,
+          usual_start_hour REAL, usual_end_hour REAL, mean_interarrival_min REAL,
+          phone TEXT, tier INTEGER DEFAULT 1)""",
+        """CREATE TABLE IF NOT EXISTS events(id SERIAL PRIMARY KEY, ts REAL,
           user_id TEXT, credential_ok INTEGER, hour REAL, inter_arrival_min REAL,
           fail_count INTEGER, session_novelty INTEGER, c REAL, b REAL, h REAL, r REAL,
           decision TEXT, detail TEXT,
-          client_ip TEXT, lat REAL, lon REAL, city TEXT, region TEXT, country TEXT);
-        CREATE TABLE IF NOT EXISTS lock_state(id INTEGER PRIMARY KEY CHECK(id=1),
-          state TEXT, updated_at REAL);
-        CREATE TABLE IF NOT EXISTS config(id INTEGER PRIMARY KEY CHECK(id=1),
-          wC REAL, wB REAL, wH REAL, tau1 REAL, tau2 REAL, mode TEXT, device_id TEXT);
-        CREATE TABLE IF NOT EXISTS lock_owners(
+          client_ip TEXT, lat REAL, lon REAL, city TEXT, region TEXT, country TEXT)""",
+        """CREATE TABLE IF NOT EXISTS lock_state(id INTEGER PRIMARY KEY CHECK(id=1),
+          state TEXT, updated_at REAL)""",
+        """CREATE TABLE IF NOT EXISTS config(id INTEGER PRIMARY KEY CHECK(id=1),
+          wC REAL, wB REAL, wH REAL, tau1 REAL, tau2 REAL, mode TEXT, device_id TEXT)""",
+        """CREATE TABLE IF NOT EXISTS lock_owners(
           google_email TEXT PRIMARY KEY, google_name TEXT, google_picture TEXT,
           device_id TEXT NOT NULL, lock_name TEXT, registered_at REAL,
-          is_super_admin INTEGER DEFAULT 0);
-        CREATE TABLE IF NOT EXISTS admins(
+          is_super_admin INTEGER DEFAULT 0)""",
+        """CREATE TABLE IF NOT EXISTS admins(
           google_email TEXT PRIMARY KEY, google_name TEXT, google_picture TEXT,
-          role TEXT DEFAULT 'admin', created_at REAL);
-        """)
+          role TEXT DEFAULT 'admin', created_at REAL)""",
+        """CREATE TABLE IF NOT EXISTS temp_pins(
+          id SERIAL PRIMARY KEY, user_id TEXT, pin_hash TEXT, phone TEXT,
+          created_at REAL, expires_at REAL, duration_min INTEGER DEFAULT 0,
+          used INTEGER DEFAULT 0, active INTEGER DEFAULT 1)""",
+        """CREATE TABLE IF NOT EXISTS otp_codes(
+          id SERIAL PRIMARY KEY, phone TEXT, otp TEXT, purpose TEXT,
+          created_at REAL, verified INTEGER DEFAULT 0)""",
+    ]
+    DDL_SQLITE = [
+        """CREATE TABLE IF NOT EXISTS users(id TEXT PRIMARY KEY, name TEXT, pin TEXT,
+          usual_start_hour REAL, usual_end_hour REAL, mean_interarrival_min REAL,
+          phone TEXT, tier INTEGER DEFAULT 1)""",
+        """CREATE TABLE IF NOT EXISTS events(id INTEGER PRIMARY KEY AUTOINCREMENT, ts REAL,
+          user_id TEXT, credential_ok INTEGER, hour REAL, inter_arrival_min REAL,
+          fail_count INTEGER, session_novelty INTEGER, c REAL, b REAL, h REAL, r REAL,
+          decision TEXT, detail TEXT,
+          client_ip TEXT, lat REAL, lon REAL, city TEXT, region TEXT, country TEXT)""",
+        """CREATE TABLE IF NOT EXISTS lock_state(id INTEGER PRIMARY KEY CHECK(id=1),
+          state TEXT, updated_at REAL)""",
+        """CREATE TABLE IF NOT EXISTS config(id INTEGER PRIMARY KEY CHECK(id=1),
+          wC REAL, wB REAL, wH REAL, tau1 REAL, tau2 REAL, mode TEXT, device_id TEXT)""",
+        """CREATE TABLE IF NOT EXISTS lock_owners(
+          google_email TEXT PRIMARY KEY, google_name TEXT, google_picture TEXT,
+          device_id TEXT NOT NULL, lock_name TEXT, registered_at REAL,
+          is_super_admin INTEGER DEFAULT 0)""",
+        """CREATE TABLE IF NOT EXISTS admins(
+          google_email TEXT PRIMARY KEY, google_name TEXT, google_picture TEXT,
+          role TEXT DEFAULT 'admin', created_at REAL)""",
+        """CREATE TABLE IF NOT EXISTS temp_pins(
+          id INTEGER PRIMARY KEY AUTOINCREMENT, user_id TEXT, pin_hash TEXT, phone TEXT,
+          created_at REAL, expires_at REAL, duration_min INTEGER DEFAULT 0,
+          used INTEGER DEFAULT 0, active INTEGER DEFAULT 1)""",
+        """CREATE TABLE IF NOT EXISTS otp_codes(
+          id INTEGER PRIMARY KEY AUTOINCREMENT, phone TEXT, otp TEXT, purpose TEXT,
+          created_at REAL, verified INTEGER DEFAULT 0)""",
+    ]
+    if USE_PG:
+        for s in DDL:
+            _pg_exec(c, s)
+        c.commit()
+        MIGRATE = [
+            ("phone", "TEXT"), ("tier", "INTEGER DEFAULT 1"),
+        ]
+        for col, typ in MIGRATE:
+            _pg_exec(c, f"ALTER TABLE users ADD COLUMN {col} {typ}")
         c.commit()
     else:
-        c.executescript("""
-        CREATE TABLE IF NOT EXISTS users(id TEXT PRIMARY KEY, name TEXT, pin TEXT,
-          usual_start_hour REAL, usual_end_hour REAL, mean_interarrival_min REAL);
-        CREATE TABLE IF NOT EXISTS events(id INTEGER PRIMARY KEY AUTOINCREMENT, ts REAL,
-          user_id TEXT, credential_ok INTEGER, hour REAL, inter_arrival_min REAL,
-          fail_count INTEGER, session_novelty INTEGER, c REAL, b REAL, h REAL, r REAL,
-          decision TEXT, detail TEXT,
-          client_ip TEXT, lat REAL, lon REAL, city TEXT, region TEXT, country TEXT);
-        CREATE TABLE IF NOT EXISTS lock_state(id INTEGER PRIMARY KEY CHECK(id=1),
-          state TEXT, updated_at REAL);
-        CREATE TABLE IF NOT EXISTS config(id INTEGER PRIMARY KEY CHECK(id=1),
-          wC REAL, wB REAL, wH REAL, tau1 REAL, tau2 REAL, mode TEXT, device_id TEXT);
-        CREATE TABLE IF NOT EXISTS lock_owners(
-          google_email TEXT PRIMARY KEY, google_name TEXT, google_picture TEXT,
-          device_id TEXT NOT NULL, lock_name TEXT, registered_at REAL,
-          is_super_admin INTEGER DEFAULT 0);
-        CREATE TABLE IF NOT EXISTS admins(
-          google_email TEXT PRIMARY KEY, google_name TEXT, google_picture TEXT,
-          role TEXT DEFAULT 'admin', created_at REAL);
-        """)
-        cols = {r[1] for r in c.execute("PRAGMA table_info(events)").fetchall()}
+        for s in DDL_SQLITE:
+            try: c.execute(s)
+            except: pass
+        cols = {r[1] for r in c.execute("PRAGMA table_info(users)").fetchall()}
+        for col, typ in [("phone", "TEXT"), ("tier", "INTEGER DEFAULT 1")]:
+            if col not in cols:
+                c.execute(f"ALTER TABLE users ADD COLUMN {col} {typ}")
+        ecols = {r[1] for r in c.execute("PRAGMA table_info(events)").fetchall()}
         for col, typ in [("client_ip", "TEXT"), ("lat", "REAL"), ("lon", "REAL"),
                          ("city", "TEXT"), ("region", "TEXT"), ("country", "TEXT")]:
-            if col not in cols:
+            if col not in ecols:
                 c.execute(f"ALTER TABLE events ADD COLUMN {col} {typ}")
-
-    # ---- Migration: add phone/is_temporary to users table ----
-    if USE_PG:
-        cur_m = c.cursor()
-        try:
-            cur_m.execute("SELECT phone FROM users LIMIT 0")
-        except Exception:
-            c.rollback()
-            cur_m.execute("ALTER TABLE users ADD COLUMN phone TEXT")
-            cur_m.execute("ALTER TABLE users ADD COLUMN is_temporary INTEGER DEFAULT 0")
-            c.commit()
-        cur_m.close()
-    else:
-        cols = {r[1] for r in c.execute("PRAGMA table_info(users)").fetchall()}
-        if "phone" not in cols:
-            c.execute("ALTER TABLE users ADD COLUMN phone TEXT")
-        if "is_temporary" not in cols:
-            c.execute("ALTER TABLE users ADD COLUMN is_temporary INTEGER DEFAULT 0")
-            c.commit()
-
-    # ---- New table: temp_pins (one-time PINs) ----
-    if USE_PG:
-        cur_t = c.cursor()
-        cur_t.execute("""CREATE TABLE IF NOT EXISTS temp_pins(
-            id SERIAL PRIMARY KEY,
-            user_id TEXT,
-            pin_hash TEXT,
-            phone TEXT,
-            created_at REAL,
-            used INTEGER DEFAULT 0,
-            active INTEGER DEFAULT 1
-        )""")
-        cur_t.close()
-    else:
-        c.execute("""CREATE TABLE IF NOT EXISTS temp_pins(
-            id INTEGER PRIMARY KEY AUTOINCREMENT,
-            user_id TEXT,
-            pin_hash TEXT,
-            phone TEXT,
-            created_at REAL,
-            used INTEGER DEFAULT 0,
-            active INTEGER DEFAULT 1
-        )""")
-
-    # ---- New table: otp_codes ----
-    if USE_PG:
-        cur_o = c.cursor()
-        cur_o.execute("""CREATE TABLE IF NOT EXISTS otp_codes(
-            id SERIAL PRIMARY KEY,
-            phone TEXT,
-            otp TEXT,
-            purpose TEXT,
-            created_at REAL,
-            verified INTEGER DEFAULT 0
-        )""")
-        cur_o.close()
-    else:
-        c.execute("""CREATE TABLE IF NOT EXISTS otp_codes(
-            id INTEGER PRIMARY KEY AUTOINCREMENT,
-            phone TEXT,
-            otp TEXT,
-            purpose TEXT,
-            created_at REAL,
-            verified INTEGER DEFAULT 0
-        )""")
+        pcols = {r[1] for r in c.execute("PRAGMA table_info(temp_pins)").fetchall()}
+        for col, typ in [("expires_at", "REAL"), ("duration_min", "INTEGER DEFAULT 0")]:
+            if col not in pcols:
+                c.execute(f"ALTER TABLE temp_pins ADD COLUMN {col} {typ}")
+        c.commit()
 
     ph = "%s" if USE_PG else "?"
-    upsert_cfg = f"INSERT INTO config VALUES(1,0.35,0.40,0.25,0.50,0.65,{ph},{ph})" if not db_table_check(c, "config") else f"UPDATE config SET mode={ph}, device_id={ph} WHERE id=1"
     if not db_table_check(c, "config"):
         db_exec(c, f"INSERT INTO config VALUES(1,0.35,0.40,0.25,0.50,0.65,{ph},{ph})", (MODE, DEVICE_ID))
     else:
         db_exec(c, f"UPDATE config SET mode={ph}, device_id={ph} WHERE id=1", (MODE, DEVICE_ID))
-
     if not db_table_check(c, "lock_state"):
         db_exec(c, f"INSERT INTO lock_state VALUES(1,'LOCKED',{ph})", (time.time(),))
-
     if db_table_check(c, "users") == 0:
         from sim_data import gen_users
         for u in gen_users()[:5]:
             db_exec(c, f"INSERT INTO users(id,name,pin,usual_start_hour,usual_end_hour,mean_interarrival_min) VALUES({ph},{ph},{ph},{ph},{ph},{ph})",
                     (u["id"], u["name"], u["pin"], u["usual_start_hour"],
                      u["usual_end_hour"], u["mean_interarrival_min"]))
-
     if SUPER_ADMIN_EMAIL:
         if USE_PG:
-            db_exec(c, f"INSERT INTO lock_owners(google_email,google_name,device_id,lock_name,registered_at,is_super_admin) VALUES({ph},{ph},{ph},{ph},{ph},1) ON CONFLICT (google_email) DO NOTHING",
-                    (SUPER_ADMIN_EMAIL, "Website Owner", DEVICE_ID, "Main Lock", time.time()))
-            db_exec(c, f"INSERT INTO admins(google_email,google_name,role,created_at) VALUES({ph},{ph},'super_admin',{ph}) ON CONFLICT (google_email) DO NOTHING",
-                    (SUPER_ADMIN_EMAIL, "Website Owner", time.time()))
+            _pg_exec(c, f"INSERT INTO lock_owners(google_email,google_name,device_id,lock_name,registered_at,is_super_admin) VALUES({ph},{ph},{ph},{ph},{ph},1) ON CONFLICT (google_email) DO NOTHING",
+                     (SUPER_ADMIN_EMAIL, "Website Owner", DEVICE_ID, "Main Lock", time.time()))
+            _pg_exec(c, f"INSERT INTO admins(google_email,google_name,role,created_at) VALUES({ph},{ph},'super_admin',{ph}) ON CONFLICT (google_email) DO NOTHING",
+                     (SUPER_ADMIN_EMAIL, "Website Owner", time.time()))
         else:
-            c.execute("INSERT OR IGNORE INTO lock_owners(google_email,google_name,device_id,lock_name,registered_at,is_super_admin) VALUES(?,?,?,?,?,1)",
-                      (SUPER_ADMIN_EMAIL, "Website Owner", DEVICE_ID, "Main Lock", time.time()))
-            c.execute("INSERT OR IGNORE INTO admins(google_email,google_name,role,created_at) VALUES(?,?, 'super_admin',?)",
-                      (SUPER_ADMIN_EMAIL, "Website Owner", time.time()))
+            try:
+                c.execute("INSERT OR IGNORE INTO lock_owners(google_email,google_name,device_id,lock_name,registered_at,is_super_admin) VALUES(?,?,?,?,?,1)",
+                          (SUPER_ADMIN_EMAIL, "Website Owner", DEVICE_ID, "Main Lock", time.time()))
+                c.execute("INSERT OR IGNORE INTO admins(google_email,google_name,role,created_at) VALUES(?,?, 'super_admin',?)",
+                          (SUPER_ADMIN_EMAIL, "Website Owner", time.time()))
+            except: pass
     c.commit()
     c.close()
     train_model()
@@ -360,20 +337,26 @@ def generate_otp(phone):
     send_whatsapp(phone, f"Your verification code: {otp}")
     return otp
 
-def generate_temp_pin(user_id, phone):
+def generate_temp_pin(user_id, phone, duration_min=120):
     raw = f"{secrets.randbelow(900000)+100000}"
     pin_hash = hashlib.sha256(raw.encode()).hexdigest()
+    now = time.time()
+    expires = now + (duration_min * 60)
     c = db(); p = ph()
     if USE_PG:
         pid = db_insert_returning(c,
-            f"INSERT INTO temp_pins(user_id,pin_hash,phone,created_at,used,active) VALUES({p},{p},{p},{p},0,1) RETURNING id",
-            (user_id, pin_hash, phone, time.time()))
+            f"INSERT INTO temp_pins(user_id,pin_hash,phone,created_at,expires_at,duration_min,used,active) VALUES({p},{p},{p},{p},{p},{p},0,1) RETURNING id",
+            (user_id, pin_hash, phone, now, expires, duration_min))
     else:
         pid = db_insert_returning(c,
-            f"INSERT INTO temp_pins(user_id,pin_hash,phone,created_at,used,active) VALUES({p},{p},{p},{p},0,1)",
-            (user_id, pin_hash, phone, time.time()))
+            f"INSERT INTO temp_pins(user_id,pin_hash,phone,created_at,expires_at,duration_min,used,active) VALUES({p},{p},{p},{p},{p},{p},0,1)",
+            (user_id, pin_hash, phone, now, expires, duration_min))
     c.commit(); c.close()
-    send_whatsapp(phone, f"Your one-time PIN: {raw}\nSingle-use. One lock/unlock only.")
+    if duration_min >= 1440:
+        dur_str = f"{duration_min // 1440} day(s)"
+    else:
+        dur_str = f"{duration_min} minute(s)"
+    send_whatsapp(phone, f"Your temporary PIN: {raw}\nValid for: {dur_str}\nSingle-use lock/unlock.")
     return raw, pid
 
 def verify_temp_pin(pin_entered, client_ip, loc):
@@ -386,7 +369,12 @@ def verify_temp_pin(pin_entered, client_ip, loc):
                         "invalid/temp PIN", client_ip, loc.get("lat"), loc.get("lon"), loc.get("city",""), loc.get("region",""), loc.get("country",""))
         return {"decision": "DENY_ALERT", "reason": "invalid or expired PIN"}
     row = rows[0]
+    if row.get("expires_at") and time.time() > row["expires_at"]:
+        db_exec(c, f"UPDATE temp_pins SET active=0 WHERE id={row['id']}")
+        c.commit(); c.close()
+        return {"decision": "DENY_ALERT", "reason": "PIN has expired"}
     user_id = row["user_id"]
+    user = get_user(user_id) or {"usual_start_hour": 7, "usual_end_hour": 21, "mean_interarrival_min": 180}
     hour = float(time.localtime().tm_hour + time.localtime().tm_min / 60)
     iv = last_interarrival(user_id)
     cfg = get_config()
@@ -397,6 +385,9 @@ def verify_temp_pin(pin_entered, client_ip, loc):
         db_exec(c, f"UPDATE temp_pins SET used=1,active=0 WHERE id={row['id']}")
         db_exec(c, f"UPDATE lock_state SET state='UNLOCKED',updated_at={p} WHERE id=1", (time.time(),))
         mqtt_publish(f"smartlock/{cfg['device_id']}/command", {"cmd": "UNLOCK", "eventId": eid, "via": "temp_pin"})
+        tier_user = get_user(user_id)
+        if tier_user and tier_user.get("tier") == 1:
+            send_whatsapp(tier_user.get("phone",""), f"ALERT: {user_id} just unlocked the door via PIN.")
         c.commit()
     else:
         c.commit()
@@ -405,6 +396,36 @@ def verify_temp_pin(pin_entered, client_ip, loc):
     if dec == "STEP_UP":
         otp_code = f"{secrets.randbelow(900000)+100000}"
         OTP_STORE[eid] = otp_code
+        result["demo_otp"] = otp_code
+    return result
+
+def verify_permanent_pin(user_id, pin_entered, client_ip, loc):
+    c = db(); p = ph()
+    row = db_fetchone(c, f"SELECT * FROM users WHERE id={p}", (user_id,))
+    c.close()
+    if not row or not row.get("pin") or row["pin"] != pin_entered:
+        eid = log_event(user_id, False, time.localtime().tm_hour, 180, 0, 0, 0, 0, 1.0, 1.0, "DENY_ALERT",
+                        "invalid permanent PIN", client_ip, loc.get("lat"), loc.get("lon"), loc.get("city",""), loc.get("region",""), loc.get("country",""))
+        return {"decision": "DENY_ALERT", "reason": "invalid credentials"}
+    user = row
+    hour = float(time.localtime().tm_hour + time.localtime().tm_min / 60)
+    iv = last_interarrival(user_id)
+    cfg = get_config()
+    C, B, Hh, R, dec, F = evaluate(user_id, hour, iv, 0, cfg)
+    eid = log_event(user_id, True, hour, iv, F, 0, C, B, Hh, R, dec, "permanent PIN access",
+                    client_ip, loc.get("lat"), loc.get("lon"), loc.get("city",""), loc.get("region",""), loc.get("country",""))
+    if dec == "GRANT":
+        c2 = db()
+        db_exec(c2, f"UPDATE lock_state SET state='UNLOCKED',updated_at={p} WHERE id=1", (time.time(),))
+        c2.commit(); c2.close()
+        mqtt_publish(f"smartlock/{cfg['device_id']}/command", {"cmd": "UNLOCK", "eventId": eid, "via": "perm_pin"})
+        if user.get("phone"):
+            send_whatsapp(user["phone"], f"NOTIFICATION: {user_id} ({user.get('name','')}) just unlocked the door.")
+    elif dec == "STEP_UP":
+        otp_code = f"{secrets.randbelow(900000)+100000}"
+        OTP_STORE[eid] = otp_code
+    result = {"decision": dec, "R": R, "C": C, "B": B, "H": Hh, "eventId": eid, "via": "perm_pin"}
+    if dec == "STEP_UP":
         result["demo_otp"] = otp_code
     return result
 
@@ -573,7 +594,7 @@ class H(BaseHTTPRequestHandler):
                 if not sess or sess["role"] not in ("admin", "super_admin"):
                     return self.send_json({"error": "forbidden"}, 403)
                 c = db()
-                rows = db_fetchall(c, "SELECT id,name,phone,is_temporary FROM users ORDER BY id")
+                rows = db_fetchall(c, "SELECT id,name,phone,tier,pin FROM users ORDER BY id")
                 c.close()
                 return self.send_json({"users": rows})
 
@@ -581,7 +602,7 @@ class H(BaseHTTPRequestHandler):
                 if not sess or sess["role"] not in ("admin", "super_admin"):
                     return self.send_json({"error": "forbidden"}, 403)
                 c = db()
-                rows = db_fetchall(c, "SELECT tp.id,tp.user_id,tp.phone,tp.created_at,tp.used,tp.active,u.name FROM temp_pins tp LEFT JOIN users u ON tp.user_id=u.id ORDER BY tp.id DESC LIMIT 50")
+                rows = db_fetchall(c, "SELECT tp.id,tp.user_id,tp.phone,tp.created_at,tp.expires_at,tp.used,tp.active,u.name FROM temp_pins tp LEFT JOIN users u ON tp.user_id=u.id ORDER BY tp.id DESC LIMIT 50")
                 c.close()
                 return self.send_json({"pins": rows})
 
@@ -666,7 +687,8 @@ class H(BaseHTTPRequestHandler):
             uid = d.get("userId", "").strip()
             name = d.get("name", "").strip()
             phone = d.get("phone", "").strip()
-            is_temp = 1 if d.get("is_temporary") else 0
+            tier = int(d.get("tier", 2))
+            pin_val = str(d.get("pin", "")).strip()
             if not uid or not name or not phone:
                 return self.send_json({"error": "userId, name, phone required"}, 400)
             c = db(); p = ph()
@@ -675,13 +697,33 @@ class H(BaseHTTPRequestHandler):
                 c.close()
                 return self.send_json({"error": "User ID already exists"}, 400)
             if USE_PG:
-                db_exec(c, f"INSERT INTO users(id,name,phone,is_temporary,pin,usual_start_hour,usual_end_hour,mean_interarrival_min) VALUES({p},{p},{p},{p},'',7.0,21.0,180.0)",
-                        (uid, name, phone, is_temp))
+                _pg_exec(c, f"INSERT INTO users(id,name,phone,tier,pin,usual_start_hour,usual_end_hour,mean_interarrival_min) VALUES({p},{p},{p},{p},{p},7.0,21.0,180.0)",
+                         (uid, name, phone, tier, pin_val))
             else:
-                db_exec(c, f"INSERT INTO users(id,name,phone,is_temporary,pin,usual_start_hour,usual_end_hour,mean_interarrival_min) VALUES({p},{p},{p},{p},'',7.0,21.0,180.0)",
-                        (uid, name, phone, is_temp))
+                db_exec(c, f"INSERT INTO users(id,name,phone,tier,pin,usual_start_hour,usual_end_hour,mean_interarrival_min) VALUES({p},{p},{p},{p},{p},7.0,21.0,180.0)",
+                        (uid, name, phone, tier, pin_val))
             c.commit(); c.close()
-            return self.send_json({"ok": True, "userId": uid})
+            if tier == 1 and pin_val:
+                send_whatsapp(phone, f"Welcome {name}. Your permanent PIN for the smart lock is: {pin_val}")
+            return self.send_json({"ok": True, "userId": uid, "tier": tier})
+
+        if p.path == "/api/admin/grant-pin":
+            if not sess or sess["role"] not in ("admin", "super_admin"):
+                return self.send_json({"error": "forbidden"}, 403)
+            uid = d.get("userId", "").strip()
+            duration_min = int(d.get("durationMin", 120))
+            if not uid:
+                return self.send_json({"error": "userId required"}, 400)
+            c = db(); p = ph()
+            user = db_fetchone(c, f"SELECT * FROM users WHERE id={p}", (uid,))
+            c.close()
+            if not user:
+                return self.send_json({"error": "User not found"}, 404)
+            if not user.get("phone"):
+                return self.send_json({"error": "User has no phone number"}, 400)
+            raw_pin, pid = generate_temp_pin(uid, user["phone"], duration_min)
+            return self.send_json({"ok": True, "userId": uid, "pin": raw_pin, "duration_min": duration_min,
+                                   "phone_masked": user["phone"][:3]+"****"+user["phone"][-2:] if len(user["phone"])>5 else user["phone"]})
 
         if p.path == "/api/admin/delete-user":
             if not sess or sess["role"] not in ("admin", "super_admin"):
@@ -718,6 +760,7 @@ class H(BaseHTTPRequestHandler):
                 return self.send_json({"error": "unauthorized"}, 401)
             phone_input = str(d.get("phone", "")).strip()
             otp_input = str(d.get("otp", "")).strip()
+            duration_min = int(d.get("durationMin", 120))
             c = db(); p = ph()
             user = db_fetchone(c, f"SELECT * FROM users WHERE id={p}", (sess["email"],))
             c.close()
@@ -733,14 +776,21 @@ class H(BaseHTTPRequestHandler):
                 return self.send_json({"error": "Invalid or expired OTP."}, 400)
             db_exec(c, f"UPDATE otp_codes SET verified=1 WHERE id={row[0]['id']}")
             c.commit(); c.close()
-            raw_pin, pid = generate_temp_pin(sess["email"], user["phone"])
-            return self.send_json({"ok": True, "pin": raw_pin, "message": "One-time PIN generated. Single-use — one lock/unlock only."})
+            raw_pin, pid = generate_temp_pin(sess["email"], user["phone"], duration_min)
+            return self.send_json({"ok": True, "pin": raw_pin, "message": "Temporary PIN generated. Single-use, time-limited."})
 
         if p.path == "/api/access/pin":
             pin_entered = str(d.get("pin", "")).strip()
+            user_id_input = d.get("userId", "").strip()
             if not pin_entered or len(pin_entered) != 6:
                 return self.send_json({"error": "6-digit PIN required"}, 400)
-            result = verify_temp_pin(pin_entered, client_ip, loc)
+            c = db(); p = ph()
+            user_check = db_fetchone(c, f"SELECT * FROM users WHERE id={p} AND tier=1", (user_id_input,)) if user_id_input else None
+            c.close()
+            if user_check and user_check.get("pin") == pin_entered:
+                result = verify_permanent_pin(user_id_input, pin_entered, client_ip, loc)
+            else:
+                result = verify_temp_pin(pin_entered, client_ip, loc)
             return self.send_json(result)
 
         if p.path == "/api/admin/revoke-pin":
