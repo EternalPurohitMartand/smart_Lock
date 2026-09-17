@@ -1,5 +1,5 @@
 const $=id=>document.getElementById(id);
-let lastEvent=null, chart=null, map=null, mapMarkers=[], currentUser=null, lastPinEvent=null;
+let lastEvent=null, chart=null, map=null, mapMarkers=[], currentUser=null;
 async function j(u,o){const r=await fetch(u,{headers:{'Content-Type':'application/json'},...o,credentials:'same-origin'});return r.json();}
 
 async function health(){try{const h=await j('/api/health');$('health').textContent=`\u25CF ${h.mode} mode \u00B7 model ${h.model_trained?'ready':'untrained'}`}catch{$('health').textContent='\u25CF server offline'}}
@@ -28,7 +28,6 @@ async function checkAuth(){
     document.body.className='role-'+me.role;
     if(me.role==='super_admin')$('navOwner').style.display='block';
     if(me.role==='admin'||me.role==='super_admin')$('navUsers').style.display='block';
-    configureAccessTab();
     return true;
   }catch{return false}
 }
@@ -123,7 +122,6 @@ document.querySelectorAll('nav button').forEach(b=>b.onclick=()=>{
   b.classList.add('active');$('tab-'+b.dataset.tab).classList.add('active');
   if(b.dataset.tab==='owner')loadOwnerDashboard();
   if(b.dataset.tab==='users'){loadAdminUsers();loadTempPins();populateGrantPinUsers();}
-  if(b.dataset.tab==='temppin')configureAccessTab();
 });
 
 $('btnLock').onclick=async()=>{await j('/api/lock/command',{method:'POST',body:JSON.stringify({command:'LOCK'})});status();events()};
@@ -177,44 +175,6 @@ async function populateGrantPinUsers(){
     $('grantPinUser').innerHTML=tier2.map(u=>`<option value="${u.id}">${u.name} (${u.id})</option>`).join('');
   }catch{}
 }
-
-function configureAccessTab(){
-  if(!currentUser)return;
-  if(currentUser.tier===1){
-    $('otpFlow').style.display='none';
-    $('pinFlow').style.display='block';
-    $('accessIntro').textContent='Enter your permanent PIN to unlock the door.';
-  }else{
-    $('otpFlow').style.display='block';
-    $('pinFlow').style.display='block';
-    $('accessIntro').textContent='Verify your identity with an OTP, then enter the PIN to unlock.';
-    $('btnRequestOtp').onclick=async()=>{
-      const r=await j('/api/user/request-otp',{method:'POST',body:JSON.stringify({phone:$('tempPhone').value})});
-      if(r.ok){
-        $('otpSection').style.display='block';
-        $('otpSection').innerHTML=`<p class="muted">OTP sent to ${r.phone_masked}</p><label>Enter OTP <input id="tempOtp" placeholder="6-digit code"/></label><div class="row"><button id="btnVerifyOtp">Verify</button></div><p class="muted">Demo: OTP is <b>${r.demo_otp}</b></p>`;
-        $('btnVerifyOtp').onclick=async()=>{
-          const r2=await j('/api/user/verify-otp',{method:'POST',body:JSON.stringify({phone:$('tempPhone').value,otp:$('tempOtp').value})});
-          if(r2.ok){$('pinResult').style.display='block';$('tempPinCode').textContent=r2.pin;$('otpSection').style.display='none';}
-          else alert(r2.error);
-        };
-      } else alert(r.error);
-    };
-  }
-}
-
-$('btnPinAccess').onclick=async()=>{
-  const r=await j('/api/access/pin',{method:'POST',body:JSON.stringify({pin:$('tempPinEntry').value})});
-  lastPinEvent=r.eventId;
-  $('pinAccessOut').textContent=JSON.stringify(r,null,2);
-  $('pinStepupBox').style.display=r.decision==='STEP_UP'?'flex':'none';
-  status();events();
-};
-$('btnPinStepup').onclick=async()=>{
-  const r=await j('/api/access/stepup',{method:'POST',body:JSON.stringify({eventId:lastPinEvent,otp:$('pinOtp').value})});
-  $('pinAccessOut').textContent=JSON.stringify(r,null,2);
-  status();events();
-};
 
 (async()=>{
   const ok=await checkAuth();

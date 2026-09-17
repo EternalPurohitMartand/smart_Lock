@@ -43,7 +43,6 @@
   <button data-tab="settings">Settings</button>
   <button data-tab="esp32">ESP32 Setup</button>
   <button data-tab="users" id="navUsers" style="display:none">Users & PINs</button>
-  <button data-tab="temppin" id="navAccess">Access</button>
   <button data-tab="owner" id="navOwner" style="display:none">Owner Dashboard</button>
 </nav>
 <main>
@@ -51,7 +50,7 @@
   <div class="cards">
     <div class="card"><h3>Lock state</h3><div id="lockState" class="big">—</div>
       <div class="row"><button id="btnLock">🔒 Lock</button><button id="btnUnlock">🔓 Unlock</button></div>
-      <p class="muted">Manual override is logged. Credential requests go through the risk engine (Access tab).</p></div>
+      <p class="muted">Manual override is logged. End users unlock via the separate user portal (/user.html).</p></div>
     <div class="card"><h3>Last decision</h3><div id="lastDecision" class="big">—</div><div id="lastRisk" class="muted">—</div></div>
     <div class="card"><h3>Policy</h3><div id="policyBox" class="mono">—</div></div>
     <div class="card admin-only"><h3>Last access location</h3>
@@ -119,7 +118,7 @@
 </section>
 <section id="tab-users" class="tab">
   <div class="card"><h3>Register User (admin only)</h3>
-    <label>User ID <input id="regUserId" placeholder="e.g. plumber_joe"/></label>
+    <label>User ID — must match the user's Google email <input id="regUserId" placeholder="e.g. user@gmail.com"/></label>
     <label>Full Name <input id="regUserName" placeholder="e.g. Joe Smith"/></label>
     <label>Phone Number <input id="regUserPhone" placeholder="e.g. +919876543210"/></label>
     <label>Access Type <select id="regUserTier"><option value="1">Permanent — trusted user with own PIN</option><option value="2" selected>Guest — receives temporary PIN via WhatsApp</option></select></label>
@@ -144,32 +143,6 @@
   <div class="card"><h3>Active Temporary PINs</h3>
     <div class="row"><button id="btnRefreshPins">Refresh</button></div>
     <table id="pinTable"><thead><tr><th>ID</th><th>User</th><th>Phone</th><th>Created</th><th>Expires</th><th>Status</th><th>Action</th></tr></thead><tbody></tbody></table>
-  </div>
-</section>
-<section id="tab-temppin" class="tab">
-  <div class="card" id="accessFlow">
-    <h3>Unlock Door</h3>
-    <p class="muted" id="accessIntro"></p>
-    <div id="otpFlow" style="display:none">
-      <label>Your registered phone number <input id="tempPhone" placeholder="+919876543210"/></label>
-      <div class="row"><button id="btnRequestOtp">Send OTP</button></div>
-      <div id="otpSection" style="display:none"></div>
-      <div id="pinResult" style="display:none">
-        <div class="card" style="background:#065f46;border-color:#10b981;margin-top:12px">
-          <h3 style="color:#10b981">Your PIN</h3>
-          <div id="tempPinCode" style="font-size:36px;font-weight:700;letter-spacing:8px;text-align:center;padding:16px;color:#fff">—</div>
-          <p class="muted" style="text-align:center">This PIN is valid for a limited time. Enter it below to unlock.</p>
-        </div>
-      </div>
-    </div>
-    <div id="pinFlow">
-      <label>Enter your PIN <input id="tempPinEntry" placeholder="6-digit PIN" maxlength="6"/></label>
-      <div class="row"><button id="btnPinAccess">Unlock</button></div>
-      <pre id="pinAccessOut" class="mono">—</pre>
-      <div id="pinStepupBox" style="display:none" class="row">
-        <input id="pinOtp" placeholder="Enter step-up OTP"/><button id="btnPinStepup">Verify</button>
-      </div>
-    </div>
   </div>
 </section>
 <section id="tab-owner" class="tab">

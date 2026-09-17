@@ -1,0 +1,64 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8"/>
+<meta name="viewport" content="width=device-width,initial-scale=1"/>
+<title>Smart Lock — User Access</title>
+<link rel="stylesheet" href="style.css"/>
+</head>
+<body>
+<header>
+  <div><h1>Smart Lock</h1><p class="sub">User access portal</p></div>
+  <div class="header-right">
+    <div id="authBox">
+      <div id="loggedOut"><a href="/api/auth/google/login?next=/user.html" class="login-btn">Sign in with Google</a></div>
+      <div id="loggedIn" style="display:none">
+        <img id="userPic" src="" alt="" class="avatar"/>
+        <span id="userName"></span>
+        <a href="/api/auth/logout" class="logout-btn">Logout</a>
+      </div>
+    </div>
+  </div>
+</header>
+<div id="loginWall" style="display:none">
+  <div class="card" style="text-align:center;max-width:400px;margin:60px auto">
+    <h2>Sign in required</h2>
+    <p>Sign in with the Google account your admin registered to unlock the door.</p>
+    <a href="/api/auth/google/login?next=/user.html" class="login-btn" style="display:inline-block;margin-top:16px">Sign in with Google</a>
+  </div>
+</div>
+<div id="mainApp" style="display:none">
+<main>
+  <div id="adminNote" class="card" style="display:none">
+    <p class="muted">You are signed in as an administrator. <a href="/">Open the admin console</a>.</p>
+  </div>
+  <div class="card" id="accessFlow">
+    <h3>Unlock Door</h3>
+    <p class="muted" id="accessIntro"></p>
+    <div id="otpFlow" style="display:none">
+      <label>Your registered phone number <input id="tempPhone" placeholder="+919876543210"/></label>
+      <div class="row"><button id="btnRequestOtp">Send OTP</button></div>
+      <div id="otpSection" style="display:none"></div>
+      <div id="pinResult" style="display:none">
+        <div class="card" style="background:#065f46;border-color:#10b981;margin-top:12px">
+          <h3 style="color:#10b981">Your PIN</h3>
+          <div id="tempPinCode" style="font-size:36px;font-weight:700;letter-spacing:8px;text-align:center;padding:16px;color:#fff">—</div>
+          <p class="muted" style="text-align:center">This PIN is valid for a limited time. Enter it below to unlock.</p>
+        </div>
+      </div>
+    </div>
+    <div id="pinFlow">
+      <label>Enter your PIN <input id="tempPinEntry" placeholder="6-digit PIN" maxlength="6"/></label>
+      <div class="row"><button id="btnPinAccess">Unlock</button></div>
+      <pre id="pinAccessOut" class="mono">—</pre>
+      <div id="pinStepupBox" style="display:none" class="row">
+        <input id="pinOtp" placeholder="Enter step-up OTP"/><button id="btnPinStepup">Verify</button>
+      </div>
+    </div>
+  </div>
+</main>
+</div>
+<footer><span class="muted">If your phone number is not recognised, ask your admin to register you first.</span></footer>
+<script src="user.js?v=1"></script>
+</body>
+</html>

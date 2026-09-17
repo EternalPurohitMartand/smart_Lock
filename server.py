@@ -534,10 +534,14 @@ class H(BaseHTTPRequestHandler):
         if p.path == "/api/auth/google/login":
             if not GOOGLE_CLIENT_ID:
                 return self.send_json({"error": "Google OAuth not configured."}, 503)
+            next_url = (q.get("next", [None])[0] or "")
+            if not (next_url.startswith("/") and not next_url.startswith("//")):
+                next_url = ""
             params = urlencode({
                 "client_id": GOOGLE_CLIENT_ID, "redirect_uri": OAUTH_REDIRECT,
                 "response_type": "code", "scope": "openid email profile",
                 "access_type": "offline", "prompt": "consent",
+                "state": next_url,
             })
             self.send_response(302)
             self.send_header("Location", f"https://accounts.google.com/o/oauth2/v2/auth?{params}")
@@ -552,8 +556,14 @@ class H(BaseHTTPRequestHandler):
             if not info:
                 return self.send_html("<h3>Login failed</h3><p>Could not verify credentials.</p><a href='/'>Back</a>", 400)
             token = create_session(info)
+            role = SESSION_STORE.get(token, {}).get("role", "user")
+            state = (q.get("state", [None])[0] or "")
+            if state.startswith("/") and not state.startswith("//"):
+                dest = state
+            else:
+                dest = "/user.html" if role == "user" else "/"
             self.send_response(302)
-            self.send_header("Location", "/")
+            self.send_header("Location", dest)
             self.set_session_cookie(token)
             self.end_headers()
             return
@@ -686,7 +696,12 @@ class H(BaseHTTPRequestHandler):
                 sess["device_id"] = device_id
                 return self.send_json({"ok": True, "device_id": device_id})
 
-        path = p.path if p.path != "/" else "/index.html"
+        if p.path in ("/user", "/app", "/access"):
+            path = "/user.html"
+        elif p.path in ("/admin", "/dashboard", "/console"):
+            path = "/index.html"
+        else:
+            path = p.path if p.path != "/" else "/index.html"
         fp = os.path.join(PUBLIC, path.lstrip("/").replace("..", ""))
         if os.path.isfile(fp):
             ext = os.path.splitext(fp)[1].lower()
