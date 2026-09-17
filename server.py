@@ -561,7 +561,7 @@ class H(BaseHTTPRequestHandler):
             if state.startswith("/") and not state.startswith("//"):
                 dest = state
             else:
-                dest = "/user.html" if role == "user" else "/"
+                dest = "/user.html" if role == "user" else "/admin.html"
             self.send_response(302)
             self.send_header("Location", dest)
             self.set_session_cookie(token)
@@ -699,7 +699,7 @@ class H(BaseHTTPRequestHandler):
         if p.path in ("/user", "/app", "/access"):
             path = "/user.html"
         elif p.path in ("/admin", "/dashboard", "/console"):
-            path = "/index.html"
+            path = "/admin.html"
         else:
             path = p.path if p.path != "/" else "/index.html"
         fp = os.path.join(PUBLIC, path.lstrip("/").replace("..", ""))

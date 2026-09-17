@@ -1,0 +1,163 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8"/>
+<meta name="viewport" content="width=device-width,initial-scale=1"/>
+<title>Pismartlok — Admin Console</title>
+<link rel="stylesheet" href="style.css"/>
+<link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css"/>
+<script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.1/dist/chart.umd.min.js"></script>
+<script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+</head>
+<body>
+<header>
+  <div class="brand"><h1>Pismartlok</h1><p class="sub">AI-Based Adaptive Access Control · R = wC·C + wB·B + wH·H</p></div>
+  <div class="header-right">
+    <a href="/" class="logout-btn">Home</a>
+    <div id="health" class="pill">…</div>
+    <div id="authBox">
+      <div id="loggedOut"><a href="/api/auth/google/login" class="login-btn">Sign in with Google</a></div>
+      <div id="loggedIn" style="display:none">
+        <img id="userPic" src="" alt="" class="avatar"/>
+        <span id="userName"></span>
+        <span id="userRole" class="pill role-pill"></span>
+        <a href="/api/auth/logout" class="logout-btn">Logout</a>
+      </div>
+    </div>
+  </div>
+</header>
+<div id="loginWall" style="display:none">
+  <div class="card" style="text-align:center;max-width:400px;margin:60px auto">
+    <h2>Sign in required</h2>
+    <p>This dashboard requires Google authentication to protect your smart lock controls.</p>
+    <a href="/api/auth/google/login" class="login-btn" style="display:inline-block;margin-top:16px">Sign in with Google</a>
+    <p class="muted" style="margin-top:12px">If this is your first time, you'll be prompted to register your smart lock.</p>
+  </div>
+</div>
+<div id="mainApp">
+<nav>
+  <button data-tab="dash" class="active">Dashboard</button>
+  <button data-tab="access">Access Request</button>
+  <button data-tab="events">Event Log</button>
+  <button data-tab="analytics">Analytics</button>
+  <button data-tab="sim">Simulation Lab</button>
+  <button data-tab="settings">Settings</button>
+  <button data-tab="esp32">ESP32 Setup</button>
+  <button data-tab="users" id="navUsers" style="display:none">Users & PINs</button>
+  <button data-tab="owner" id="navOwner" style="display:none">Owner Dashboard</button>
+</nav>
+<main>
+<section id="tab-dash" class="tab active">
+  <div class="cards">
+    <div class="card"><h3>Lock state</h3><div id="lockState" class="big">—</div>
+      <div class="row"><button id="btnLock">🔒 Lock</button><button id="btnUnlock">🔓 Unlock</button></div>
+      <p class="muted">Manual override is logged. End users unlock via the separate user portal (/user.html).</p></div>
+    <div class="card"><h3>Last decision</h3><div id="lastDecision" class="big">—</div><div id="lastRisk" class="muted">—</div></div>
+    <div class="card"><h3>Policy</h3><div id="policyBox" class="mono">—</div></div>
+    <div class="card admin-only"><h3>Last access location</h3>
+      <div id="lastLocation" class="muted">—</div>
+      <div id="map" style="height:200px;border-radius:8px;margin-top:8px;display:none"></div>
+      <p class="muted" id="mapNote" style="display:none">Admin-only: shows coordinates from the last access event.</p>
+    </div>
+  </div>
+</section>
+<section id="tab-access" class="tab">
+  <div class="card"><h3>Try an access (goes through Fig.2 flow)</h3>
+    <label>User <select id="userSel"></select></label>
+    <label>PIN / credential <input id="cred" placeholder="e.g. 1000"/></label>
+    <label>Hour (0–23, blank = now) <input id="hour" type="number" min="0" max="23" step="0.5"/></label>
+    <label>Inter-arrival min (blank = auto) <input id="iv" type="number" min="0" step="1"/></label>
+    <label><input id="sn" type="checkbox"/> Unseen session / new device</label>
+    <div class="row"><button id="btnAccess">Request access</button></div>
+    <pre id="accessOut" class="mono">—</pre>
+    <div id="stepupBox" style="display:none" class="row">
+      <input id="otp" placeholder="Enter OTP"/><button id="btnStepup">Verify step-up</button>
+    </div>
+  </div>
+</section>
+<section id="tab-events" class="tab">
+  <div class="card"><h3>Access-event database</h3>
+    <div class="row"><button id="btnRefresh">Refresh</button></div>
+    <table id="evTable"><thead><tr><th>ID</th><th>Time</th><th>User</th><th>Cred</th><th>Hour</th><th>C</th><th>B</th><th>H</th><th>R</th><th>Decision</th><th class="admin-only">Location</th></tr></thead><tbody></tbody></table>
+  </div>
+</section>
+<section id="tab-analytics" class="tab">
+  <div class="card"><h3>Decision distribution (run Simulation Lab first)</h3><canvas id="ch" height="120"></canvas>
+    <pre id="anaOut" class="mono">No simulation run yet. Paper reports: precision 0.736, recall 0.965, F1 0.835, FPR 0.173.</pre></div>
+</section>
+<section id="tab-sim" class="tab">
+  <div class="card"><h3>Reproduce paper Table 1 / Fig 3</h3>
+    <p class="muted">20 users · 6000 normal train · 4500 test (3000 normal + 1500 anomalous).</p>
+    <button id="btnSim">Run synthetic evaluation</button>
+    <pre id="simOut" class="mono">—</pre></div>
+</section>
+<section id="tab-settings" class="tab">
+  <div class="card"><h3>Risk weights & thresholds (operating parameters, §2.3)</h3>
+    <label>wC <input id="wC" type="number" step="0.05" min="0" max="1"/></label>
+    <label>wB <input id="wB" type="number" step="0.05" min="0" max="1"/></label>
+    <label>wH <input id="wH" type="number" step="0.05" min="0" max="1"/></label>
+    <label>τ1 (grant→step-up) <input id="t1" type="number" step="0.05" min="0" max="1"/></label>
+    <label>τ2 (step-up→deny) <input id="t2" type="number" step="0.05" min="0" max="1"/></label>
+    <button id="btnSave">Save</button><span id="saveMsg" class="muted"></span>
+    <p class="muted">Paper defaults: wC=0.35 wB=0.40 wH=0.25 τ1=0.50 τ2=0.65. Recalibrate on real data before deployment.</p></div>
+  <div class="card admin-only"><h3>Register your smart lock</h3>
+    <p class="muted">First login = admin for this lock. One lock per admin.</p>
+    <label>Lock Device ID <input id="regDeviceId" placeholder="e.g. door01"/></label>
+    <label>Lock Name <input id="regLockName" placeholder="e.g. Front Door"/></label>
+    <button id="btnRegister">Register Lock</button><span id="regMsg" class="muted"></span>
+  </div>
+</section>
+<section id="tab-esp32" class="tab">
+  <div class="card"><h3>Connect your ESP32 later (no rewrite needed)</h3>
+  <ol>
+    <li>Keep using Blynk now. When ready flash <code>esp32/ESP32_LOCK_FIRMWARE.ino</code>.</li>
+    <li>Set <code>API_BASE</code> to this server (or MQTT broker) in the .ino file.</li>
+    <li>Topics: <code class="mono">smartlock/door01/command</code> → lock, <code class="mono">smartlock/door01/status</code> ← ESP32.</li>
+    <li>Website keeps working in <b>simulation</b> mode until hardware publishes status.</li>
+  </ol>
+  <p class="muted">API contract: POST /api/access/request, POST /api/access/stepup, POST /api/lock/command, GET /api/lock/status. Same for future Node port.</p></div>
+</section>
+<section id="tab-users" class="tab">
+  <div class="card"><h3>Register User (admin only)</h3>
+    <label>User ID — must match the user's Google email <input id="regUserId" placeholder="e.g. user@gmail.com"/></label>
+    <label>Full Name <input id="regUserName" placeholder="e.g. Joe Smith"/></label>
+    <label>Phone Number <input id="regUserPhone" placeholder="e.g. +919876543210"/></label>
+    <label>Access Type <select id="regUserTier"><option value="1">Permanent — trusted user with own PIN</option><option value="2" selected>Guest — receives temporary PIN via WhatsApp</option></select></label>
+    <div id="regPinField" style="display:none">
+      <label>Permanent PIN (6-digit) <input id="regUserPin" maxlength="6" placeholder="e.g. 123456"/></label>
+      <p class="muted">PIN will be sent to user via WhatsApp. Admin is notified on every entry.</p>
+    </div>
+    <div class="row"><button id="btnRegisterUser">Register User</button></div>
+    <span id="regUserMsg" class="muted"></span>
+  </div>
+  <div class="card admin-only"><h3>Send Temporary PIN to Guest</h3>
+    <label>User <select id="grantPinUser"></select></label>
+    <label>Duration (minutes) <input id="grantPinDuration" type="number" value="120" min="1"/></label>
+    <p class="muted">2 min = quick entry, 1440 = 1 day, 10080 = 7 days, etc.</p>
+    <div class="row"><button id="btnGrantPin">Generate & Send PIN</button></div>
+    <span id="grantPinMsg" class="muted"></span>
+  </div>
+  <div class="card"><h3>Registered Users</h3>
+    <div class="row"><button id="btnRefreshUsers">Refresh</button></div>
+    <table id="userTable"><thead><tr><th>User ID</th><th>Name</th><th>Phone</th><th>Type</th><th>PIN</th><th>Action</th></tr></thead><tbody></tbody></table>
+  </div>
+  <div class="card"><h3>Active Temporary PINs</h3>
+    <div class="row"><button id="btnRefreshPins">Refresh</button></div>
+    <table id="pinTable"><thead><tr><th>ID</th><th>User</th><th>Phone</th><th>Created</th><th>Expires</th><th>Status</th><th>Action</th></tr></thead><tbody></tbody></table>
+  </div>
+</section>
+<section id="tab-owner" class="tab">
+  <div class="card"><h3>Owner Dashboard — All Users & Lock IDs</h3>
+    <div id="ownerStats" class="cards" style="margin-bottom:12px"></div>
+    <h4>Registered Lock Owners</h4>
+    <table id="ownerTable"><thead><tr><th>Email</th><th>Name</th><th>Lock ID</th><th>Lock Name</th><th>Registered</th><th>Role</th></tr></thead><tbody></tbody></table>
+    <h4 style="margin-top:16px">Recent Events (all tenants)</h4>
+    <table id="ownerEvents"><thead><tr><th>ID</th><th>Time</th><th>User</th><th>Decision</th><th>Location</th><th>IP</th></tr></thead><tbody></tbody></table>
+  </div>
+</section>
+</main>
+</div>
+<footer><span class="muted">Software-only decision layer per paper §4 — does not replace BLE/crypto protocol defenses.</span></footer>
+<script src="app.js?v=2"></script>
+</body>
+</html>
